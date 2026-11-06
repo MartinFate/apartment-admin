@@ -1,0 +1,26 @@
+{
+  "name": "apartment-admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "公寓管理系统前端（Vue3 + Vite + Ant Design Vue），对应 PRD v0.4",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
+    "ant-design-vue": "^4.2.6",
+    "axios": "^1.7.7",
+    "pinia": "^2.2.4",
+    "unplugin-vue-components": "^32.1.0",
+    "vant": "^4.10.2",
+    "vue": "^3.5.12",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.4",
+    "vite": "^5.4.10"
+  }
+}

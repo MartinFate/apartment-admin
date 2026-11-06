@@ -1,0 +1,10 @@
+// 统一 API 出口：所有视图均通过本模块访问 /api 真实后端。
+export { authApi } from './auth'
+export { userApi } from './users'
+export { storeApi } from './stores'
+export { roomApi } from './rooms'
+export { tenantApi } from './tenants'
+export { paymentApi } from './payments'
+export { reminderApi } from './reminders'
+export { dashboardApi } from './dashboard'
+export { auditApi } from './audit'

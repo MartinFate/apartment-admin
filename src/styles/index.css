@@ -1,0 +1,142 @@
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: #f0f2f5;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+/* 登录页背景 */
+.login-wrap {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1677ff 0%, #69b1ff 100%);
+}
+
+.login-card {
+  width: min(380px, 92vw);
+  padding: 36px 32px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.login-title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.login-subtitle {
+  text-align: center;
+  color: rgba(0, 0, 0, 0.45);
+  margin-bottom: 24px;
+}
+
+/* 布局 */
+.layout-logo {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.layout-logo .logo-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #1677ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 16px;
+  flex: 0 0 auto;
+}
+
+/* 注意：antd 的 .ant-layout-header 默认深藏青底(#001529)，且它的样式由 CSS-in-JS
+   运行时注入、晚于本文件，单靠 .layout-header 会被它覆盖 —— 顶栏会变成深底配深灰字，
+   手机上汉堡菜单图标几乎与背景融为一体（看起来像"菜单没显示"）。
+   这里用 .ant-layout-header.layout-header 提升优先级压过它。 */
+.ant-layout-header.layout-header {
+  background: #fff;
+  color: rgba(0, 0, 0, 0.88);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+}
+
+/* 移动端汉堡按钮：高对比 + 明确文字，避免用户找不到入口 */
+.mobile-menu-btn.ant-btn,
+.mobile-menu-btn.ant-btn-text {
+  color: rgba(0, 0, 0, 0.88);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  padding: 0 8px;
+  height: 36px;
+}
+
+.layout-content {
+  margin: 16px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 8px;
+  min-height: calc(100vh - 64px - 32px);
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* 移动端（≤767px）整体收紧，避免内容被挤压重叠 */
+@media (max-width: 767px) {
+  .layout-content {
+    margin: 8px;
+    padding: 12px;
+    min-height: calc(100vh - 64px - 16px);
+  }
+
+  .ant-layout-header.layout-header {
+    padding: 0 12px;
+  }
+
+  .page-toolbar {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .mobile-menu-btn.ant-btn,
+  .mobile-menu-btn.ant-btn-text {
+    font-size: 15px;
+  }
+}

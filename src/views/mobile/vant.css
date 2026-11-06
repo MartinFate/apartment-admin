@@ -1,0 +1,32 @@
+/*
+ * 移动端视图共用的 Vant 样式。
+ *
+ * 为什么不用官方推荐的 `import 'vant/es/xxx/style'`：
+ * 每个 style 入口都会再 import 一次 base.css 和一批公共依赖（badge/icon/loading/overlay...），
+ * 多个组件叠加时这些公共 CSS 会在产物里重复出现，实测单页 CSS 膨胀到 82KB。
+ * 这里直接引组件的 index.css，公共部分只保留一份。
+ */
+@import 'vant/es/style/base.css';
+
+@import 'vant/es/badge/index.css';
+@import 'vant/es/button/index.css';
+@import 'vant/es/cell/index.css';
+@import 'vant/es/cell-group/index.css';
+@import 'vant/es/dialog/index.css';
+@import 'vant/es/empty/index.css';
+@import 'vant/es/field/index.css';
+@import 'vant/es/icon/index.css';
+@import 'vant/es/image/index.css';
+@import 'vant/es/image-preview/index.css';
+@import 'vant/es/loading/index.css';
+@import 'vant/es/nav-bar/index.css';
+@import 'vant/es/overlay/index.css';
+@import 'vant/es/picker/index.css';
+@import 'vant/es/popup/index.css';
+@import 'vant/es/radio/index.css';
+@import 'vant/es/radio-group/index.css';
+@import 'vant/es/search/index.css';
+@import 'vant/es/swipe/index.css';
+@import 'vant/es/swipe-item/index.css';
+@import 'vant/es/toast/index.css';
+@import 'vant/es/uploader/index.css';

@@ -1,0 +1,42 @@
+# ===== 依赖 =====
+node_modules/
+**/node_modules/
+
+# ===== 构建产物 =====
+dist/
+dist-test/
+.vite/
+*.tsbuildinfo
+
+# ===== 环境变量与密钥 =====
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+INITIAL_ADMIN_PASSWORD.txt
+deploy/.env.local
+
+# ===== 运行时数据（含租户身份证/合同附件，严禁入库）=====
+server/data/
+server/uploads/
+server/backups/
+server/logs/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+
+# ===== 备份包与归档 =====
+*.tar.gz
+*.tgz
+*.zip
+
+# ===== 编辑器与系统 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
