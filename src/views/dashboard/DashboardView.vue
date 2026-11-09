@@ -98,8 +98,11 @@
         <a-form-item label="收取房租（元）">
           <a-input-number v-model:value="payForm.rentAmount" :min="0" :precision="0" style="width: 100%" />
         </a-form-item>
-        <a-form-item label="房租延期至（默认+1个月）">
+        <a-form-item label="房租延期至（默认按本期到期日 +1 个月）">
           <a-date-picker v-model:value="payForm.newDue" value-format="YYYY-MM-DD" style="width: 100%" />
+          <div v-if="payForm.newDue && payForm.newDue < TODAY" style="margin-top: 6px; color: #d46b08; font-size: 12px; line-height: 1.5">
+            本期已逾期超过一个月，顺延后仍是过去日期，请按实际补缴期数手动调整。
+          </div>
         </a-form-item>
         <a-form-item label="收款日期">
           <a-date-picker v-model:value="payForm.paidAt" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -371,7 +374,7 @@ const electricityFeeTotal = computed(() => {
 const utilityFee = computed(() => round2(waterFeeTotal.value + electricityFeeTotal.value))
 const totalPay = computed(() => round2((Number(payForm.rentAmount) || 0) + utilityFee.value))
 
-// 默认延期：本期到期日（若已超期则从今天起算）+ 1 个自然月（月末自动夹取，见 @/utils/date）
+// 默认延期：始终以本期到期日为锚点 + 1 个自然月，逾期缴费不改变每月固定日期（见 @/utils/date）
 
 // 房租收缴：弹出确认框，带出住户信息与默认金额/到期日，可修改后确认
 function openCollect(record) {

@@ -32,12 +32,15 @@ export function addMonths(dateStr, months = 1) {
 }
 
 /**
- * 房租到期顺延：base = max(本期到期日, 今天) + 1 个自然月。
+ * 房租到期顺延：始终以「本期到期日」为锚点 + 1 个自然月，保持每月固定日期不变。
+ * 逾期几天才缴费不改变锚点，否则等于白送几天房租：
+ *   11-06 到期、11-09 才缴 → 12-06（不是 12-09）。
+ * 仅当没有本期到期日（首次收款）时才以今天为基准。
+ * 注意：若本期到期日已逾期超过一期，顺延后仍是过去日期，需由管理员按实际补缴期数调整。
  * 纯字符串比较（YYYY-MM-DD 字典序即时间序），避免 Date 对象时区问题。
  */
 export function nextDueDate(oldDue, today = localDateStr()) {
   const t = String(today).slice(0, 10)
   const o = oldDue ? String(oldDue).slice(0, 10) : ''
-  const base = o && o >= t ? o : t
-  return addMonths(base, 1)
+  return addMonths(o || t, 1)
 }

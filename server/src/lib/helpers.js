@@ -35,7 +35,9 @@ export function nextPaymentNo() {
   return `SF${String(seq + 1).padStart(6, '0')}`
 }
 
-// 房租到期顺延：base = max(本期到期日, 今天) + 1 个自然月。
+// 房租到期顺延：始终以「本期到期日」为锚点 + 1 个自然月，保持每月固定日期不变。
+// 逾期缴费不重置锚点（11-06 到期、11-09 才缴仍应顺延到 12-06）。
+// 无本期到期日（首次收款）时才以今天为基准。
 // 纯字符串计算：避免 setMonth() 月末溢出（1/31 → 3/3）与时区漂移。
 function addMonths(dateStr, months = 1) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr || ''))
@@ -52,8 +54,7 @@ function addMonths(dateStr, months = 1) {
 export function nextDueDate(oldDue, today = todayStr()) {
   const t = String(today).slice(0, 10)
   const o = oldDue ? String(oldDue).slice(0, 10) : ''
-  const base = o && o >= t ? o : t
-  return addMonths(base, 1)
+  return addMonths(o || t, 1)
 }
 
 // 上海时间（UTC+8）各分量。中国不实行夏令时，偏移恒定，故可直接 +8h 取 UTC 分量，

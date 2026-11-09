@@ -56,6 +56,12 @@
           placeholder="请输入金额"
         />
         <MobileDateField v-model="collectForm.newDue" label="房租延期至" required />
+        <div style="padding: 0 16px 8px; color: #969799; font-size: 12px">
+          默认按本期到期日 +1 个月（逾期缴费不改变每月固定日期）
+        </div>
+        <div v-if="collectForm.newDue && collectForm.newDue < TODAY" style="padding: 0 16px 8px; color: #ed6a0c; font-size: 12px">
+          本期已逾期超过一个月，顺延后仍是过去日期，请按实际补缴期数手动调整。
+        </div>
         <MobileDateField v-model="collectForm.paidAt" label="收款日期" required />
 
         <div class="grp">水费</div>
@@ -261,7 +267,7 @@ async function checkout(record) {
   }
 }
 
-// 顺延一个月由 @/utils/date 统一处理（含月末夹取，避免 1/31 → 3/3）
+// 顺延一个月由 @/utils/date 统一处理：以本期到期日为锚点（逾期不改锚点），含月末夹取
 
 const collectShow = ref(false)
 const paying = ref(false)
