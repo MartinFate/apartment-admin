@@ -144,6 +144,19 @@ CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_logs(ts);
 CREATE INDEX IF NOT EXISTS idx_audit_module_target ON audit_logs(module, target_id);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);
+
+-- 企业微信群机器人推送记录。dedup_key 唯一保证「每日汇总 / 单笔业务事件」不重复发送；
+-- 发送失败会释放占位并另记一行 error，便于排查且不阻塞业务。
+CREATE TABLE IF NOT EXISTS push_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,                      -- daily / event / error
+  dedup_key TEXT NOT NULL UNIQUE,
+  title TEXT DEFAULT '',
+  ok INTEGER NOT NULL DEFAULT 0,
+  error TEXT DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_push_created ON push_logs(created_at);
 `)
 
 // ---------- 阶段补充字段迁移（建表后执行，幂等）----------

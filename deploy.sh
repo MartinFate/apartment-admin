@@ -130,6 +130,18 @@ if grep -q '^CORS_ORIGINS=\*' "$ENV_FILE"; then
   sed -i 's|^CORS_ORIGINS=\*|CORS_ORIGINS=|' "$ENV_FILE"
   echo "已将 CORS_ORIGINS 由 * 收敛为留空（仅同源）"
 fi
+# 幂等补齐新增配置项：只追加缺失的键，绝不覆盖已有值（尤其用户填好的 Webhook）
+# 这样老部署无需重建 .env，也能在升级后直接看到 WECOM_* 配置位。
+if [ -s "$ENV_FILE" ] && [ "$(tail -c 1 "$ENV_FILE" | wc -l)" -eq 0 ]; then
+  printf '\n' >> "$ENV_FILE"
+fi
+append_env_key() {
+  grep -q "^$1=" "$ENV_FILE" || printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
+}
+append_env_key WECOM_WEBHOOK_URL ''
+append_env_key WECOM_PUSH_DAILY 1
+append_env_key WECOM_PUSH_HOUR 9
+append_env_key WECOM_PUSH_EVENTS 1
 chmod 600 "$ENV_FILE"
 
 # 重启后端（前提：apartment-admin.service 已按文档创建）

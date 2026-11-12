@@ -3,6 +3,7 @@ import db from '../db.js'
 import { parseRow, todayStr, nowHms, nowLocal } from '../lib/helpers.js'
 import { applyMeterReadings, calcUtility } from '../lib/utility.js'
 import { setAuditDetail } from '../lib/audit.js'
+import { pushEvent } from '../lib/wecom.js'
 
 const router = Router()
 
@@ -90,6 +91,13 @@ router.post('/', (req, res) => {
     )
   // 按抄表收款后，房间水电表读数推进到本次读数
   applyMeterReadings(roomId, b, b.paidAt || todayStr())
+  pushEvent('payment_create', {
+    tenantName: b.tenantName || '',
+    roomNo: b.roomNo || '',
+    amount: total,
+    paymentNo: payNo,
+    paidAt
+  }, payNo)
   res.status(201).json(parseRow(db.prepare('SELECT * FROM payments WHERE id=?').get(info.lastInsertRowid)))
 })
 
@@ -121,6 +129,16 @@ router.delete('/:id', (req, res) => {
     })
   }
   db.prepare('DELETE FROM payments WHERE id=?').run(id)
+  // 删除属高危动作：除审计日志外，再向企微群推一条可即时看到的提醒
+  if (cur) {
+    pushEvent('payment_delete', {
+      tenantName: cur.tenant_name,
+      roomNo: cur.room_no,
+      amount: cur.amount,
+      paymentNo: cur.no,
+      paidAt: cur.paid_at
+    }, `payment:${id}:${cur.no}`)
+  }
   res.json(true)
 })
 

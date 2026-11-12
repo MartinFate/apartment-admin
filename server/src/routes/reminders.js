@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import db from '../db.js'
 import { parseRow, nowLocal } from '../lib/helpers.js'
+import { pushEvent } from '../lib/wecom.js'
 
 const router = Router()
 
@@ -24,6 +25,7 @@ router.post('/', (req, res) => {
        ORDER BY id DESC LIMIT 1`
     )
     .get(b.tenantId || null, b.type || '', b.content || '', since)
+  // 命中去重时不重复推送，天然避开企微机器人 20 条/分钟的频率限制
   if (dup) return res.status(200).json(parseRow(dup))
 
   const info = db
@@ -40,6 +42,12 @@ router.post('/', (req, res) => {
       'unread',
       nowLocal()
     )
+  pushEvent('reminder', {
+    tenantName: b.tenantName || '',
+    storeName: b.storeName || '',
+    roomNo: b.roomNo || '',
+    content: b.content || ''
+  }, `reminder:${info.lastInsertRowid}`)
   res.status(201).json(parseRow(db.prepare('SELECT * FROM reminders WHERE id=?').get(info.lastInsertRowid)))
 })
 

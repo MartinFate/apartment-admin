@@ -80,7 +80,11 @@ cd /opt/apartment-admin/server
 npm install          # 见第 3 节
 cp .env.example .env
 # 编辑 .env：JWT_SECRET 改成随机长串（deploy.sh 会自动生成）；CORS_ORIGINS 留空即可，切勿填 *
-npm start            # 后端入口已 import 'dotenv/config'，.env 会在此自动加载生效（含 JWT_SECRET/CORS_ORIGINS）
+# 可选：企业微信消息推送。在企微群「群机器人 → 添加」拿到 Webhook 后填 WECOM_WEBHOOK_URL，
+# 另可设 WECOM_PUSH_DAILY / WECOM_PUSH_HOUR / WECOM_PUSH_EVENTS（默认 1 / 9 / 1）。
+# ⚠️ Webhook 等同「往群里发消息」的权限，.env 已被 .gitignore 排除，切勿提交到公开仓库。
+# 留空则调度器空转，不产生任何外网请求；改完需 systemctl restart apartment-admin。
+npm start            # 后端入口已 import 'dotenv/config'，.env 会在此自动加载生效（含 JWT_SECRET/CORS_ORIGINS/WECOM_*）
 ```
 
 验证后端：

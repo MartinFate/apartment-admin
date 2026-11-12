@@ -3,12 +3,18 @@ import db from '../db.js'
 import { syncRoomStatus, parseRow, todayStr, nowHms, nowLocal } from '../lib/helpers.js'
 import { applyMeterReadings, calcUtility } from '../lib/utility.js'
 import { setAuditDetail } from '../lib/audit.js'
+import { pushEvent } from '../lib/wecom.js'
 
 const router = Router()
 
 function roomNoOf(roomId) {
   if (!roomId) return ''
   return db.prepare('SELECT room_no FROM rooms WHERE id=?').get(roomId)?.room_no || ''
+}
+
+function storeNameOf(storeId) {
+  if (!storeId) return ''
+  return db.prepare('SELECT name FROM stores WHERE id=?').get(storeId)?.name || ''
 }
 
 router.get('/', (req, res) => {
@@ -88,6 +94,14 @@ router.post('/', (req, res) => {
       roomNo: roomNoOf(b.roomId ? +b.roomId : null)
     })
   }
+  // 企微推送：异步执行，失败不影响本次入住结果
+  pushEvent('checkin', {
+    tenantName: b.name,
+    storeName: storeNameOf(b.storeId),
+    roomNo: roomNoOf(b.roomId ? +b.roomId : null),
+    checkInDate: b.checkInDate || '',
+    rent: rentAmount
+  }, `tenant:${newId}`)
   res.status(201).json(parseRow(db.prepare('SELECT * FROM tenants WHERE id=?').get(newId)))
 })
 
@@ -148,6 +162,15 @@ router.put('/:id', (req, res) => {
   })
   syncRoomStatus(oldRoom)
   if (newRoom && newRoom !== oldRoom) syncRoomStatus(newRoom)
+  // 编辑页里把状态改为已退租，与专用退房接口同样推送，避免漏通知
+  if (newStatus === 'left' && cur.status !== 'left') {
+    pushEvent('checkout', {
+      tenantName: cur.name,
+      storeName: storeNameOf(cur.store_id),
+      roomNo: roomNoOf(newRoom),
+      checkOutDate: checkoutDate
+    }, `tenant:${id}:${checkoutDate}`)
+  }
   res.json(parseRow(db.prepare('SELECT * FROM tenants WHERE id=?').get(id)))
 })
 
@@ -185,6 +208,12 @@ router.post('/:id/due-date', (req, res) => {
     after: { rentDueDate }
   })
   db.prepare('UPDATE tenants SET rent_due_date=? WHERE id=?').run(rentDueDate, id)
+  pushEvent('due_date', {
+    tenantName: cur?.name || '',
+    roomNo: roomNoOf(cur?.room_id),
+    before: cur?.rent_due_date || '',
+    after: rentDueDate
+  }, `tenant:${id}:${rentDueDate}`)
   res.json(parseRow(db.prepare('SELECT * FROM tenants WHERE id=?').get(id)))
 })
 
@@ -253,6 +282,19 @@ router.post('/:id/collect', (req, res) => {
   )
   db.prepare('UPDATE tenants SET rent_due_date=? WHERE id=?').run(b.newDue, id)
   applyMeterReadings(t.room_id, b, b.paidAt || todayStr())
+  pushEvent('collect', {
+    tenantName: t.name,
+    storeName: storeNameOf(t.store_id),
+    roomNo: roomNoOf(t.room_id),
+    amount: total,
+    paymentNo: payNo,
+    oldDue: t.rent_due_date || '',
+    newDue: b.newDue,
+    waterMode: u.waterMode,
+    electricityMode: u.electricityMode,
+    waterFee: u.waterFee,
+    electricityFee: u.electricityFee
+  }, payNo)
   res.json(parseRow(db.prepare('SELECT * FROM tenants WHERE id=?').get(id)))
 })
 
@@ -275,6 +317,12 @@ router.post('/:id/checkout', (req, res) => {
     before: { status: t.status, rentDueDate: t.rent_due_date || '' },
     after: { status: 'left', checkOutDate: outAt, roomStatus: 'cleaning' }
   })
+  pushEvent('checkout', {
+    tenantName: t.name,
+    storeName: storeNameOf(t.store_id),
+    roomNo,
+    checkOutDate: outAt
+  }, `tenant:${id}:${outAt}`)
   res.json(parseRow(db.prepare('SELECT * FROM tenants WHERE id=?').get(id)))
 })
 
