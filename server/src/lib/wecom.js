@@ -51,6 +51,13 @@ function money(n) {
   return `¥${Math.round((Number(n) || 0) * 100) / 100}`
 }
 
+// 计费模式在库里是英文枚举，群里显示成中文才看得懂。
+function modeLabel(m) {
+  if (m === 'meter') return '抄表'
+  if (m === 'flat') return '包月'
+  return '不计'
+}
+
 // 兼容两种来源：SQL 行是蛇形（store_name/room_no），业务事件 payload 是驼峰。
 function placeOf(p) {
   const store = p.storeName || p.store_name || ''
@@ -126,14 +133,18 @@ export function buildEventContent(type, p = {}) {
   const place = placeOf(p)
   switch (type) {
     case 'checkin':
-      return `**新入住**\n> ${place} · ${p.tenantName || '-'}\n> 入住 ${p.checkInDate || '-'} · 月租 ${money(p.rent)}`
+      return [
+        '**新入住**',
+        `> ${place} · ${p.tenantName || '-'}`,
+        `> 入住 ${p.checkInDate || '-'} · 月租 ${money(p.rent)}${p.firstPaymentNo ? ` · 首期单号 ${p.firstPaymentNo}` : ''}`
+      ].join('\n')
     case 'collect':
       return [
         `**收到房租** · ${money(p.amount)}`,
         `> ${place} · ${p.tenantName || '-'} · 单号 ${p.paymentNo || '-'}`,
         `> 房租有效期 ${p.oldDue || '-'} → **${p.newDue || '-'}**`,
         (p.waterMode || p.electricityMode)
-          ? `> 水 ${p.waterMode || '不计'} ${money(p.waterFee)} / 电 ${p.electricityMode || '不计'} ${money(p.electricityFee)}`
+          ? `> 水 ${modeLabel(p.waterMode)} ${money(p.waterFee)} / 电 ${modeLabel(p.electricityMode)} ${money(p.electricityFee)}`
           : ''
       ].filter(Boolean).join('\n')
     case 'payment_create':

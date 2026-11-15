@@ -139,7 +139,10 @@ const collectContent = w.buildEventContent('collect', {
 })
 ok('收款事件含金额与单号', collectContent.includes('¥1420') && collectContent.includes('SF000008'))
 ok('收款事件含到期日前后对照', collectContent.includes('2026-11-06') && collectContent.includes('2026-12-06'))
-ok('收款事件含水/电模式', collectContent.includes('flat') && collectContent.includes('meter'))
+ok('收款事件水/电模式显示中文', collectContent.includes('水 包月') && collectContent.includes('电 抄表'))
+ok('收款事件不再出现英文枚举', !collectContent.includes('flat') && !collectContent.includes('meter'))
+ok('入住事件含首期收款单号', w.buildEventContent('checkin', { rent: 1200, firstPaymentNo: 'SF000010' }).includes('首期单号 SF000010'))
+ok('无首期收款时不显示单号', !w.buildEventContent('checkin', { rent: 0 }).includes('首期单号'))
 
 const del = w.buildEventContent('payment_delete', {
   tenantName: '李某', roomNo: '201', amount: 600, paymentNo: 'SF000006', paidAt: '2026-10-31 08:18:49'

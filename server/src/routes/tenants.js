@@ -64,10 +64,11 @@ router.post('/', (req, res) => {
   syncRoomStatus(b.roomId ? +b.roomId : null)
   // 新办理入住：自动生成首期房租收款记录（编辑 PUT 不触发此逻辑）
   const rentAmount = b.rent ? +b.rent : 0
+  let firstPayNo = ''
   if (rentAmount > 0) {
     const lastPay = db.prepare("SELECT no FROM payments WHERE no LIKE 'SF%' ORDER BY id DESC LIMIT 1").get()
     const seq = lastPay && lastPay.no ? parseInt(lastPay.no.slice(2), 10) || 0 : 0
-    const firstPayNo = `SF${String(seq + 1).padStart(6, '0')}`
+    firstPayNo = `SF${String(seq + 1).padStart(6, '0')}`
     // 收款时间取实际录入时间（今天，北京时间带时分秒）；房租覆盖区间：起=入住日，止=房租到期日
     db.prepare(
       `INSERT INTO payments (no, tenant_id, tenant_name, store_id, room_no, amount, paid_at, remark,
@@ -100,7 +101,8 @@ router.post('/', (req, res) => {
     storeName: storeNameOf(b.storeId),
     roomNo: roomNoOf(b.roomId ? +b.roomId : null),
     checkInDate: b.checkInDate || '',
-    rent: rentAmount
+    rent: rentAmount,
+    firstPaymentNo: firstPayNo
   }, `tenant:${newId}`)
   res.status(201).json(parseRow(db.prepare('SELECT * FROM tenants WHERE id=?').get(newId)))
 })

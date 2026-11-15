@@ -208,7 +208,7 @@ Webhook 地址等同「往群里发消息」的权限，仅存于 `server/.env`�
 
 ## 5. 实际数据模型
 
-> ⚠️ 与 v0.4 规划不同：**未建** `Building` / `Lease` / `Bill` / `WorkOrder` 表。租期与押金内联在 `tenants`，收款为 `payments` 单表记账（无独立账单表）。以下为实际 9 张表。
+> ⚠️ 与 v0.4 规划不同：**未建** `Building` / `Lease` / `Bill` / `WorkOrder` 表。租期与押金内联在 `tenants`，收款为 `payments` 单表记账（无独立账单表）。以下为实际 8 张表。
 
 | 表 | 关键字段 | 说明 |
 | ---- | ---- | ---- |
@@ -355,7 +355,7 @@ Webhook 地址等同「往群里发消息」的权限，仅存于 `server/.env`�
 
 | 项 | 变更 |
 | ---- | ---- |
-| 数据层 | `db.js` 新增 `push_logs` 表（`dedup_key` 唯一 + `created_at` 索引），共 9 张表；老库随启动自动建表 |
+| 数据层 | `db.js` 新增 `push_logs` 表（`dedup_key` 唯一 + `created_at` 索引），共 8 张表；老库随启动自动建表 |
 | 推送层 | 新增 `lib/wecom.js`：官方 Webhook 域名白名单校验、Node 20 内置 `fetch`（零新增依赖）、每日汇总与 8 类事件模板、北京时间调度、`unref` 定时器、失败重试占位释放 |
 | 埋点 | `tenants.js`（入住/编辑退房/改到期日/收款/退房）、`payments.js`（新增/删除收款）、`reminders.js`（催租）共 9 处，均为 fire-and-forget |
 | 配置 | `.env.example` 新增 `WECOM_*`；`deploy.sh` 幂等补齐缺失键且不覆盖已有值；`index.js` 启动调度器 |
