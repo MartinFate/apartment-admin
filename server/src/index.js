@@ -5,6 +5,7 @@ import './db.js'
 import { createApp } from './app.js'
 import { startAuditRetention } from './lib/audit.js'
 import { startPushScheduler } from './lib/wecom.js'
+import { startWecomBot } from './lib/wecomBot.js'
 
 const PORT = process.env.PORT || 3000
 const app = createApp()
@@ -15,6 +16,10 @@ startAuditRetention()
 // 企业微信推送：未配置 WECOM_WEBHOOK_URL 时调度器空转，不产生任何网络请求。
 // 定时器 unref，不阻止进程退出。
 startPushScheduler()
+
+// 企业微信智能机器人（群内 @ 查房态）：长连接为主动出站，无需公网入口。
+// 未配置 WECOM_BOT_ID / WECOM_BOT_SECRET 或禁用时内部直接跳过，不产生任何外网请求。
+startWecomBot()
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console

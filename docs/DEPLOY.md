@@ -161,3 +161,31 @@ cp -r server/uploads          /backup/uploads-$(date +%F)
 - 启用 RBAC：`users.role`（admin/manager/operator/finance）+ `store_id` 门店维度数据隔离。
 - 附件迁移到对象存储（S3/OSS）+ 服务端加密 + 签名 URL。
 - 详见 `docs/DEPLOY_AND_RBAC_PLAN.md`。
+
+---
+
+## 9. 企业微信群内查房态（v1.4，可选）
+
+与第 4.1 节的 `WECOM_WEBHOOK_URL`（群机器人，纯出站推送）是**两个独立机器人、两套凭证**，互不影响。群内查询使用企微「智能机器人 → API 模式 → 长连接」：服务主动出站连 `wss://openws.work.weixin.qq.com`，**无需公网 IP / 域名备案 / 消息加解密**，内网 LXC 可直接运行。
+
+1. 企微管理后台创建智能机器人 → 开启「API 模式」→ 选择「长连接」→ 复制 Bot ID 与 Secret，并把机器人拉进目标群。
+2. 编辑 `/opt/apartment-admin/server/.env`（不入库，`deploy.sh` 同步时已排除）：
+
+   ```ini
+   WECOM_BOT_ID=<Bot ID>
+   WECOM_BOT_SECRET=<Secret>
+   WECOM_BOT_ENABLED=1
+   WECOM_BOT_ALLOWED_CHATS=      # 留空不限；联调后建议回填群 chatid 收紧
+   ```
+
+3. 安装新增依赖并重启：
+
+   ```bash
+   cd /opt/apartment-admin/server && npm install
+   systemctl restart apartment-admin
+   journalctl -u apartment-admin -f | grep wecom-bot   # 出现「认证成功」即就绪
+   ```
+
+4. 自检（不联网、不发消息，用真实数据库渲染答案）：`node scripts/wecom-bot-check.mjs 房态`。
+
+群里可用只读命令：`房态` / `空房` / `待清扫` / `到期` / `604`（房号）/ `帮助`。只认白名单命令、不接大模型、不提供任何写操作；`msgid` 排重 + 每群 60 秒限流，每次查询写一条 `audit_logs`。未配置凭证或 SDK 缺失时该模块完全不启动，不影响主服务与 L1 推送。全部配置项与安全边界见 `README.md` 与 `server/.env.example`。

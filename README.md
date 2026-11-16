@@ -25,13 +25,14 @@ apartment-admin/
 │   └── views/mobile/…            # 移动视图 + responsive.js + vant.css
 └── server/
     ├── .env.example              # PORT / JWT_SECRET / DATA_DIR / AUDIT_* / WECOM_* 等
-    ├── src/db.js                 # 建表 + 幂等 addCol 迁移 + 种子（9 张表）
+    ├── src/db.js                 # 建表 + 幂等 addCol 迁移 + 种子（8 张表）
     ├── src/app.js / index.js     # 中间件 / 路由挂载 / 启动
     ├── src/auth.js               # bcrypt + JWT + authRequired / requireRole
-    ├── src/lib/                  # helpers.js / utility.js / audit.js / wecom.js
+    ├── src/lib/                  # helpers / utility / audit / wecom / roomQuery / wecomBot
     ├── src/routes/               # auth / users / stores / rooms / tenants /
     │                             # payments / reminders / dashboard / uploads / audit
-    ├── scripts/wecom-push.mjs         # 企微推送运维脚本（预览 / 测试 / 立即汇总）
+    ├── scripts/wecom-push.mjs         # 企微 L1 推送运维脚本（预览 / 测试 / 立即汇总）
+    ├── scripts/wecom-bot-check.mjs    # 企微 L2 群内查询自检（不联网、不发消息）
     ├── test/*.unit.test.mjs           # 离线单测（无需原生依赖、无需联网）
     ├── data/                     # SQLite 库（部署时排除，不覆盖）
     └── uploads/                  # 身份证 / 合同附件（部署时排除）
@@ -90,7 +91,37 @@ npm start              # :3000，启动即建表 + 种子
 
 只推业务必要字段，**不推手机号、身份证号、附件**；消息里含租客姓名，请控制群成员范围。事件推送为异步 fire-and-forget，网络失败只记日志、绝不影响接口响应。企微机器人有 20 条/分钟限制：每日汇总合成一条，`reminders` 原有的 60 秒去重也避免催租刷屏。`push_logs.dedup_key` 唯一保证服务重启不重复发，记录保留 180 天。
 
-> 本轮只做**出站通知**。若要在微信里直接打开系统并免登录（工作台应用 / OAuth），需要已备案公网域名、HTTPS 与认证主体，属于另一期方案。
+> 上面这一层只做**出站通知**。若要在微信里直接打开系统并免登录（工作台应用 / OAuth），需要已备案公网域名、HTTPS 与认证主体，属于另一期方案。
+
+## 企业微信群内查房态（v1.4，可选）
+
+在群里 `@公寓助手 房态`，机器人直接回一张房态表。这与上面的 Webhook 推送是**两个独立机器人、两套凭证**：群机器人只能发，智能机器人能收也能回。
+
+底层用企微「智能机器人 → API 模式 → 长连接」：服务主动连 `wss://openws.work.weixin.qq.com`，**无需公网 IP、域名备案或消息加解密**，内网 LXC 直接可用。依赖官方 `@wecom/aibot-node-sdk`（内置心跳与断线重连）。
+
+**配置三步**
+
+1. 企微管理后台创建智能机器人 → 开启「API 模式」→ 选择「长连接」→ 复制 Bot ID 与 Secret，并把机器人拉进目标群。
+2. 在 `server/.env`（不进 git）填入：
+
+   ```ini
+   WECOM_BOT_ID=<Bot ID>
+   WECOM_BOT_SECRET=<Secret>
+   WECOM_BOT_ENABLED=1
+   WECOM_BOT_ALLOWED_CHATS=      # 留空不限；联调后建议回填群 chatid 收紧
+   ```
+
+3. `cd server && npm install && sudo systemctl restart apartment-admin`；日志出现 `[wecom-bot] 认证成功` 即就绪。
+
+**群里可用命令（只读）**：`房态`（总览）、`空房`、`待清扫`、`到期`（7 天内 + 已逾期）、`604`（单个房间详情）、`帮助`。
+
+**安全边界**：只解析白名单命令，不接大模型，不提供任何写操作；默认只允许群聊；`msgid` 排重 + 每群 60 秒限流；每次查询写一条 `audit_logs`（actor 标记企微机器人）；手机号 / 身份证 / 附件不查询也不输出，姓名 / 金额 / 表读数可分别用 `WECOM_BOT_SHOW_*` 关闭。未配置凭证或 SDK 缺失时完全不启动，不影响主服务与 L1 推送。
+
+```bash
+node server/scripts/wecom-bot-check.mjs        # 用真实数据库渲染答案，不联网、不发消息
+node server/test/roomQuery.unit.test.mjs       # 离线单测
+journalctl -u apartment-admin -f | grep wecom-bot
+```
 
 ## 操作日志审计（v1.2）
 
@@ -103,11 +134,13 @@ npm start              # :3000，启动即建表 + 种子
 ## 验证
 
 ```bash
-node --check server/src/lib/wecom.js             # 或遍历 server/src 全量
+node --check server/src/lib/wecomBot.js          # 或遍历 server/src 全量
 node server/test/audit.unit.test.mjs             # 40 项离线单测
-node server/test/wecom.unit.test.mjs             # 66 项离线单测（配置/URL 白名单/日期/汇总/事件/幂等）
+node server/test/wecom.unit.test.mjs             # 69 项离线单测（配置/URL 白名单/日期/汇总/事件/幂等）
 node server/test/date.unit.test.mjs              # 到期日锚点与月末夹取
+node server/test/roomQuery.unit.test.mjs         # 108 项离线单测（命令/白名单/快照/脱敏/去重/限流）
 npm run build                                   # 离线构建
+# 容器内：node scripts/wecom-bot-check.mjs      # 真实数据库渲染群内答案
 ```
 
 > WorkBuddy 沙箱无 `better-sqlite3` 原生模块且无外网，无法启动后端做端到端联调；依赖安装与真实落库 / 权限 / CSV 下载 / 企微真实发送验证请在本机或目标容器完成，复核清单见 docs/PRD.md §10。

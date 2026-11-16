@@ -142,6 +142,21 @@ append_env_key WECOM_WEBHOOK_URL ''
 append_env_key WECOM_PUSH_DAILY 1
 append_env_key WECOM_PUSH_HOUR 9
 append_env_key WECOM_PUSH_EVENTS 1
+# 智能机器人（群内 @ 查房态）：只补空键，绝不写入或覆盖 Bot ID / Secret 等凭据，
+# 由运维在容器里手工填入 .env（deploy.sh 同步时已排除 .env）。
+append_env_key WECOM_BOT_ID ''
+append_env_key WECOM_BOT_SECRET ''
+append_env_key WECOM_BOT_ENABLED 1
+append_env_key WECOM_BOT_ALLOWED_CHATS ''
+append_env_key WECOM_BOT_ALLOWED_USERS ''
+append_env_key WECOM_BOT_ALLOW_SINGLE 0
+append_env_key WECOM_BOT_SHOW_NAME 1
+append_env_key WECOM_BOT_SHOW_RENT 1
+append_env_key WECOM_BOT_SHOW_METER 1
+append_env_key WECOM_BOT_REPLY_UNKNOWN 1
+append_env_key WECOM_BOT_RATE_LIMIT 10
+append_env_key WECOM_BOT_TEST_CHAT ''
+append_env_key WECOM_BOT_WS_URL ''
 chmod 600 "$ENV_FILE"
 
 # 重启后端（前提：apartment-admin.service 已按文档创建）
