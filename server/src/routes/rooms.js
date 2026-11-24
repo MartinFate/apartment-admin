@@ -66,9 +66,11 @@ router.delete('/:id', (req, res) => {
     .prepare("SELECT 1 FROM tenants WHERE room_id=? AND status='active' LIMIT 1")
     .get(id)
   if (occupied) return res.status(400).json({ message: '该房间有在住租户，请先办理退房再删除' })
-  // 历史租户不再指向已删除房间（避免悬空引用）
-  db.prepare('UPDATE tenants SET room_id=NULL WHERE room_id=?').run(id)
-  db.prepare('DELETE FROM rooms WHERE id=?').run(id)
+  // 清空历史租户的房间引用与删除房间必须原子，避免留下悬空 room_id。
+  db.transaction(() => {
+    db.prepare('UPDATE tenants SET room_id=NULL WHERE room_id=?').run(id)
+    db.prepare('DELETE FROM rooms WHERE id=?').run(id)
+  })()
   res.json(true)
 })
 

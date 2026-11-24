@@ -4,8 +4,11 @@ import { parseRow, todayStr, nowHms, nowLocal } from '../lib/helpers.js'
 import { applyMeterReadings, calcUtility } from '../lib/utility.js'
 import { setAuditDetail } from '../lib/audit.js'
 import { pushEvent } from '../lib/wecom.js'
+import { requireRole } from '../auth.js'
 
 const router = Router()
+// 财务写操作（收款、硬删收款）仅超级管理员与财务可执行；GET 列表保持登录可读。
+const financeWrite = requireRole('admin', 'finance')
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -21,7 +24,7 @@ router.get('/', (req, res) => {
   res.json({ list: rows.map(parseRow), total: rows.length })
 })
 
-router.post('/', (req, res) => {
+router.post('/', financeWrite, (req, res) => {
   const b = req.body || {}
 
   // 房间 id：优先前端传，否则从租户反查（按抄表计费需要它取上次读数）
@@ -55,42 +58,48 @@ router.post('/', (req, res) => {
   const paidAt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(paidAtDate)
     ? paidAtDate
     : `${paidAtDate} ${nowHms()}`
-  const info = db
-    .prepare(
-      `INSERT INTO payments (no, tenant_id, tenant_name, store_id, room_no, amount, paid_at, remark,
-        rent_amount, utility_mode, water_mode, electricity_mode,
-        rent_old_due, rent_new_due,
-        water_reading, water_usage, water_price, water_fee,
-        electricity_reading, electricity_usage, electricity_price, electricity_fee, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    )
-    .run(
-      payNo,
-      b.tenantId || null,
-      b.tenantName || '',
-      b.storeId || null,
-      b.roomNo || '',
-      total,
-      paidAt,
-      b.remark || '',
-      rentAmount,
-      u.utilityMode,
-      u.waterMode,
-      u.electricityMode,
-      b.rentOldDue || '',
-      b.rentNewDue || '',
-      u.waterReading,
-      u.waterUsage,
-      u.waterPrice,
-      u.waterFee,
-      u.electricityReading,
-      u.electricityUsage,
-      u.electricityPrice,
-      u.electricityFee,
-      nowLocal()
-    )
-  // 按抄表收款后，房间水电表读数推进到本次读数
-  applyMeterReadings(roomId, b, b.paidAt || todayStr())
+  // 收款写入与表读数推进是一个原子单元：任一步失败都不留下「钱收了但读数没变」的脏数据。
+  // 网络推送（pushEvent）留在事务外，失败不影响已提交的业务数据。
+  const writePayment = db.transaction(() => {
+    const info = db
+      .prepare(
+        `INSERT INTO payments (no, tenant_id, tenant_name, store_id, room_no, amount, paid_at, remark,
+          rent_amount, utility_mode, water_mode, electricity_mode,
+          rent_old_due, rent_new_due,
+          water_reading, water_usage, water_price, water_fee,
+          electricity_reading, electricity_usage, electricity_price, electricity_fee, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      )
+      .run(
+        payNo,
+        b.tenantId || null,
+        b.tenantName || '',
+        b.storeId || null,
+        b.roomNo || '',
+        total,
+        paidAt,
+        b.remark || '',
+        rentAmount,
+        u.utilityMode,
+        u.waterMode,
+        u.electricityMode,
+        b.rentOldDue || '',
+        b.rentNewDue || '',
+        u.waterReading,
+        u.waterUsage,
+        u.waterPrice,
+        u.waterFee,
+        u.electricityReading,
+        u.electricityUsage,
+        u.electricityPrice,
+        u.electricityFee,
+        nowLocal()
+      )
+    // 按抄表收款后，房间水电表读数推进到本次读数
+    applyMeterReadings(roomId, b, b.paidAt || todayStr())
+    return info.lastInsertRowid
+  })
+  const newId = writePayment()
   pushEvent('payment_create', {
     tenantName: b.tenantName || '',
     roomNo: b.roomNo || '',
@@ -98,10 +107,10 @@ router.post('/', (req, res) => {
     paymentNo: payNo,
     paidAt
   }, payNo)
-  res.status(201).json(parseRow(db.prepare('SELECT * FROM payments WHERE id=?').get(info.lastInsertRowid)))
+  res.status(201).json(parseRow(db.prepare('SELECT * FROM payments WHERE id=?').get(newId)))
 })
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', financeWrite, (req, res) => {
   const id = +req.params.id
   // 硬删除前留存快照：否则记录消失后审计日志里只剩「谁删了一条 ID」，无法回答删了多少钱。
   const cur = db

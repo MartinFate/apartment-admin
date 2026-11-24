@@ -4,8 +4,12 @@ import { syncRoomStatus, parseRow, todayStr, nowHms, nowLocal } from '../lib/hel
 import { applyMeterReadings, calcUtility } from '../lib/utility.js'
 import { setAuditDetail } from '../lib/audit.js'
 import { pushEvent } from '../lib/wecom.js'
+import { requireRole } from '../auth.js'
 
 const router = Router()
+// 财务写操作（房租收缴、改到期日）仅超级管理员与财务可执行。
+// 注意：办理入住（POST /）虽会自动生成首期收款，但那是入住流程的一部分，仍保持原权限。
+const financeWrite = requireRole('admin', 'finance')
 
 function roomNoOf(roomId) {
   if (!roomId) return ''
@@ -40,54 +44,62 @@ router.post('/', (req, res) => {
       .get(+b.roomId)
     if (occupied) return res.status(400).json({ message: '该房间已有在住租户，不能重复入住' })
   }
-  const info = db
-    .prepare(
-      `INSERT INTO tenants (name, phone, id_card, store_id, room_id, check_in_date, contract_end, rent_due_date, deposit, rent, status, attachments, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    )
-    .run(
-      b.name,
-      b.phone || '',
-      b.idCard || '',
-      +b.storeId,
-      b.roomId ? +b.roomId : null,
-      b.checkInDate || '',
-      b.contractEnd || '',
-      b.rentDueDate || '',
-      b.deposit ? +b.deposit : 0,
-      b.rent ? +b.rent : 0,
-      b.status || 'active',
-      JSON.stringify(b.attachments || {}),
-      nowLocal()
-    )
-  const newId = info.lastInsertRowid
-  syncRoomStatus(b.roomId ? +b.roomId : null)
-  // 新办理入住：自动生成首期房租收款记录（编辑 PUT 不触发此逻辑）
+  // 入住是三步写（租户 + 房态联动 + 首期账单），必须同成同败：
+  // 否则会出现「租户已入住但没生成首期账单」或「房态还没变 rented」的不一致。
   const rentAmount = b.rent ? +b.rent : 0
-  let firstPayNo = ''
-  if (rentAmount > 0) {
-    const lastPay = db.prepare("SELECT no FROM payments WHERE no LIKE 'SF%' ORDER BY id DESC LIMIT 1").get()
-    const seq = lastPay && lastPay.no ? parseInt(lastPay.no.slice(2), 10) || 0 : 0
-    firstPayNo = `SF${String(seq + 1).padStart(6, '0')}`
-    // 收款时间取实际录入时间（今天，北京时间带时分秒）；房租覆盖区间：起=入住日，止=房租到期日
-    db.prepare(
-      `INSERT INTO payments (no, tenant_id, tenant_name, store_id, room_no, amount, paid_at, remark,
-        rent_amount, rent_old_due, rent_new_due, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-    ).run(
-      firstPayNo,
-      newId,
-      b.name,
-      +b.storeId,
-      roomNoOf(b.roomId ? +b.roomId : null),
-      rentAmount,
-      nowLocal(),
-      '入住首期房租',
-      rentAmount,
-      b.checkInDate || '',
-      b.rentDueDate || '',
-      nowLocal()
-    )
+  const checkin = db.transaction(() => {
+    const info = db
+      .prepare(
+        `INSERT INTO tenants (name, phone, id_card, store_id, room_id, check_in_date, contract_end, rent_due_date, deposit, rent, status, attachments, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      )
+      .run(
+        b.name,
+        b.phone || '',
+        b.idCard || '',
+        +b.storeId,
+        b.roomId ? +b.roomId : null,
+        b.checkInDate || '',
+        b.contractEnd || '',
+        b.rentDueDate || '',
+        b.deposit ? +b.deposit : 0,
+        b.rent ? +b.rent : 0,
+        b.status || 'active',
+        JSON.stringify(b.attachments || {}),
+        nowLocal()
+      )
+    const newId = info.lastInsertRowid
+    syncRoomStatus(b.roomId ? +b.roomId : null)
+    // 新办理入住：自动生成首期房租收款记录（编辑 PUT 不触发此逻辑）
+    let firstPayNo = ''
+    if (rentAmount > 0) {
+      const lastPay = db.prepare("SELECT no FROM payments WHERE no LIKE 'SF%' ORDER BY id DESC LIMIT 1").get()
+      const seq = lastPay && lastPay.no ? parseInt(lastPay.no.slice(2), 10) || 0 : 0
+      firstPayNo = `SF${String(seq + 1).padStart(6, '0')}`
+      // 收款时间取实际录入时间（今天，北京时间带时分秒）；房租覆盖区间：起=入住日，止=房租到期日
+      db.prepare(
+        `INSERT INTO payments (no, tenant_id, tenant_name, store_id, room_no, amount, paid_at, remark,
+          rent_amount, rent_old_due, rent_new_due, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+      ).run(
+        firstPayNo,
+        newId,
+        b.name,
+        +b.storeId,
+        roomNoOf(b.roomId ? +b.roomId : null),
+        rentAmount,
+        nowLocal(),
+        '入住首期房租',
+        rentAmount,
+        b.checkInDate || '',
+        b.rentDueDate || '',
+        nowLocal()
+      )
+    }
+    return { newId, firstPayNo }
+  })
+  const { newId, firstPayNo } = checkin()
+  if (firstPayNo) {
     setAuditDetail(req, {
       firstPaymentNo: firstPayNo,
       firstRentAmount: rentAmount,
@@ -95,7 +107,7 @@ router.post('/', (req, res) => {
       roomNo: roomNoOf(b.roomId ? +b.roomId : null)
     })
   }
-  // 企微推送：异步执行，失败不影响本次入住结果
+  // 企微推送：事务提交后执行，失败不影响本次入住结果
   pushEvent('checkin', {
     tenantName: b.name,
     storeName: storeNameOf(b.storeId),
@@ -126,24 +138,29 @@ router.put('/:id', (req, res) => {
     if (occupied) return res.status(400).json({ message: '该房间已有在住租户，不能重复入住' })
   }
   const newAttachments = b.attachments !== undefined ? JSON.stringify(b.attachments) : cur.attachments
-  db.prepare(
-    `UPDATE tenants SET name=?, phone=?, id_card=?, store_id=?, room_id=?, check_in_date=?, contract_end=?, rent_due_date=?, deposit=?, rent=?, status=?, attachments=?, check_out_date=? WHERE id=?`
-  ).run(
-    b.name ?? cur.name,
-    b.phone ?? cur.phone,
-    b.idCard ?? cur.id_card,
-    b.storeId ? +b.storeId : cur.store_id,
-    newRoom,
-    b.checkInDate ?? cur.check_in_date,
-    b.contractEnd ?? cur.contract_end,
-    b.rentDueDate ?? cur.rent_due_date,
-    b.deposit !== undefined ? +b.deposit : cur.deposit,
-    b.rent !== undefined ? +b.rent : cur.rent,
-    b.status ?? cur.status,
-    newAttachments,
-    checkoutDate,
-    id
-  )
+  // 租户字段更新与新旧房间房态联动必须原子：否则换房时会出现两个房间状态都错乱。
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE tenants SET name=?, phone=?, id_card=?, store_id=?, room_id=?, check_in_date=?, contract_end=?, rent_due_date=?, deposit=?, rent=?, status=?, attachments=?, check_out_date=? WHERE id=?`
+    ).run(
+      b.name ?? cur.name,
+      b.phone ?? cur.phone,
+      b.idCard ?? cur.id_card,
+      b.storeId ? +b.storeId : cur.store_id,
+      newRoom,
+      b.checkInDate ?? cur.check_in_date,
+      b.contractEnd ?? cur.contract_end,
+      b.rentDueDate ?? cur.rent_due_date,
+      b.deposit !== undefined ? +b.deposit : cur.deposit,
+      b.rent !== undefined ? +b.rent : cur.rent,
+      b.status ?? cur.status,
+      newAttachments,
+      checkoutDate,
+      id
+    )
+    syncRoomStatus(oldRoom)
+    if (newRoom && newRoom !== oldRoom) syncRoomStatus(newRoom)
+  })()
   // 审计明细：记录关键字段改前 / 改后，便于区分「续缴顺延」与「手动改到期日」
   setAuditDetail(req, {
     tenantName: cur.name,
@@ -162,8 +179,6 @@ router.put('/:id', (req, res) => {
       status: b.status ?? cur.status
     }
   })
-  syncRoomStatus(oldRoom)
-  if (newRoom && newRoom !== oldRoom) syncRoomStatus(newRoom)
   // 编辑页里把状态改为已退租，与专用退房接口同样推送，避免漏通知
   if (newStatus === 'left' && cur.status !== 'left') {
     pushEvent('checkout', {
@@ -192,13 +207,15 @@ router.delete('/:id', (req, res) => {
       }
     })
   }
-  db.prepare('DELETE FROM tenants WHERE id=?').run(id)
-  syncRoomStatus(cur?.room_id)
+  db.transaction(() => {
+    db.prepare('DELETE FROM tenants WHERE id=?').run(id)
+    syncRoomStatus(cur?.room_id)
+  })()
   res.json(true)
 })
 
 // 内联修改房租到期日（工作台直接改）
-router.post('/:id/due-date', (req, res) => {
+router.post('/:id/due-date', financeWrite, (req, res) => {
   const id = +req.params.id
   const { rentDueDate } = req.body || {}
   if (!rentDueDate) return res.status(400).json({ message: '请选择日期' })
@@ -220,7 +237,7 @@ router.post('/:id/due-date', (req, res) => {
 })
 
 // 房租收缴：生成收款记录（含水电费）+ 顺延到期日 + 推进水电表读数
-router.post('/:id/collect', (req, res) => {
+router.post('/:id/collect', financeWrite, (req, res) => {
   const id = +req.params.id
   const b = req.body || {}
   const t = db.prepare('SELECT * FROM tenants WHERE id=?').get(id)
@@ -250,40 +267,44 @@ router.post('/:id/collect', (req, res) => {
   const paidAt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(paidAtDate)
     ? paidAtDate
     : `${paidAtDate} ${nowHms()}`
-  db.prepare(
-    `INSERT INTO payments (no, tenant_id, tenant_name, store_id, room_no, amount, paid_at, remark,
-      rent_amount, utility_mode, water_mode, electricity_mode,
-      rent_old_due, rent_new_due,
-      water_reading, water_usage, water_price, water_fee,
-      electricity_reading, electricity_usage, electricity_price, electricity_fee, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(
-    payNo,
-    t.id,
-    t.name,
-    t.store_id,
-    roomNoOf(t.room_id),
-    total,
-    paidAt,
-    b.remark || '',
-    rentAmount,
-    u.utilityMode,
-    u.waterMode,
-    u.electricityMode,
-    t.rent_due_date || '',
-    b.newDue,
-    u.waterReading,
-    u.waterUsage,
-    u.waterPrice,
-    u.waterFee,
-    u.electricityReading,
-    u.electricityUsage,
-    u.electricityPrice,
-    u.electricityFee,
-    nowLocal()
-  )
-  db.prepare('UPDATE tenants SET rent_due_date=? WHERE id=?').run(b.newDue, id)
-  applyMeterReadings(t.room_id, b, b.paidAt || todayStr())
+  // 收款三段写（收款记录 + 房租到期日 + 水电表读数）必须原子：
+  // 任一步失败都回滚，杜绝「钱收了但到期日没顺延 / 表读数没推进」的脏数据。
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO payments (no, tenant_id, tenant_name, store_id, room_no, amount, paid_at, remark,
+        rent_amount, utility_mode, water_mode, electricity_mode,
+        rent_old_due, rent_new_due,
+        water_reading, water_usage, water_price, water_fee,
+        electricity_reading, electricity_usage, electricity_price, electricity_fee, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).run(
+      payNo,
+      t.id,
+      t.name,
+      t.store_id,
+      roomNoOf(t.room_id),
+      total,
+      paidAt,
+      b.remark || '',
+      rentAmount,
+      u.utilityMode,
+      u.waterMode,
+      u.electricityMode,
+      t.rent_due_date || '',
+      b.newDue,
+      u.waterReading,
+      u.waterUsage,
+      u.waterPrice,
+      u.waterFee,
+      u.electricityReading,
+      u.electricityUsage,
+      u.electricityPrice,
+      u.electricityFee,
+      nowLocal()
+    )
+    db.prepare('UPDATE tenants SET rent_due_date=? WHERE id=?').run(b.newDue, id)
+    applyMeterReadings(t.room_id, b, b.paidAt || todayStr())
+  })()
   pushEvent('collect', {
     tenantName: t.name,
     storeName: storeNameOf(t.store_id),
@@ -308,11 +329,14 @@ router.post('/:id/checkout', (req, res) => {
   // 记录退房时间（北京时间，带时分秒）
   const outAt = nowLocal()
   const roomNo = roomNoOf(t.room_id)
-  db.prepare("UPDATE tenants SET status='left', check_out_date=? WHERE id=?").run(outAt, id)
-  // 房间直接置为待清扫：不调用 syncRoomStatus（否则会因无在住租户被判为空置）
-  if (t.room_id) {
-    db.prepare("UPDATE rooms SET status='cleaning' WHERE id=?").run(t.room_id)
-  }
+  // 租户置为已退租 + 房间置为待清扫必须原子，避免「人退了但房间还显示已租」。
+  db.transaction(() => {
+    db.prepare("UPDATE tenants SET status='left', check_out_date=? WHERE id=?").run(outAt, id)
+    // 房间直接置为待清扫：不调用 syncRoomStatus（否则会因无在住租户被判为空置）
+    if (t.room_id) {
+      db.prepare("UPDATE rooms SET status='cleaning' WHERE id=?").run(t.room_id)
+    }
+  })()
   setAuditDetail(req, {
     tenantName: t.name,
     roomNo,

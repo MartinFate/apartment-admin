@@ -44,19 +44,30 @@ router.put('/:id', (req, res) => {
   const { name, role, storeId, status, password } = req.body || {}
   const cur = db.prepare('SELECT * FROM users WHERE id=?').get(id)
   if (!cur) return res.status(404).json({ message: '用户不存在' })
+  // 自我保护：不能改自己的角色或把自己禁用，否则查库校验生效后会立即失去管理入口、把系统锁死。
+  if (id === req.user.sub) {
+    const wantedRole = ROLES.includes(role) ? role : cur.role
+    const wantedStatus = status || cur.status
+    if (wantedRole !== cur.role || wantedStatus !== cur.status) {
+      return res.status(400).json({ message: '不能修改自己的角色或状态，请由其他管理员操作' })
+    }
+  }
   const nextRole = ROLES.includes(role) ? role : cur.role
   const nextStore = storeId !== undefined ? storeId : cur.store_id
   const nextStatus = status || cur.status
-  db.prepare('UPDATE users SET name=?, role=?, store_id=?, status=? WHERE id=?').run(
-    name ?? cur.name,
-    nextRole,
-    nextStore,
-    nextStatus,
-    id
-  )
-  if (password) {
-    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(password), id)
-  }
+  // 账号字段与密码两个更新必须原子，避免出现「角色已改但密码没换」的半更新状态。
+  db.transaction(() => {
+    db.prepare('UPDATE users SET name=?, role=?, store_id=?, status=? WHERE id=?').run(
+      name ?? cur.name,
+      nextRole,
+      nextStore,
+      nextStatus,
+      id
+    )
+    if (password) {
+      db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(password), id)
+    }
+  })()
   res.json(parseRow(publicRow(id)))
 })
 

@@ -123,6 +123,15 @@ node server/test/roomQuery.unit.test.mjs       # 离线单测
 journalctl -u apartment-admin -f | grep wecom-bot
 ```
 
+## 权限模型（v1.5）
+
+- 每个请求 `authRequired` 都查库校验账号：删除/禁用立即失效旧 token（不必等 7 天），并用库内角色覆盖 JWT 快照，降权即时生效。
+- 角色：`admin` 全量；`finance` 可做收款/删收款/收缴/改到期日；`manager`/`operator` 做常规录入，财务写接口 403。GET 读取对所有已登录账号开放。
+- 挂载点：`/api/users/*` 仅 admin；`POST/DELETE /api/payments`、`POST /api/tenants/:id/collect`、`POST /api/tenants/:id/due-date` 仅 admin+finance；`/api/audit/*` 仅 admin。
+- 管理员不能改自己的角色或禁用自己（防止锁死系统）。
+- **门店级数据隔离仍未启用**：任一 active 账号仍可读全店数据与附件；角色枚举与 `store_id` 字段已就绪，见 `docs/PRD.md` §2 / §8。
+- 多步写已事务化（收款、收缴、入住、退房等 8 类），失败整笔回滚；企微推送在事务外，失败不影响业务数据。
+
 ## 操作日志审计（v1.2）
 
 - 所有写操作、登录/改密、附件上传/查看/删除、日志导出由 `server/src/lib/audit.js` 的顶层中间件记录到 `audit_logs`；普通列表 GET 默认不记（`AUDIT_LOG_READS=1` 可开启全量）。
@@ -135,10 +144,12 @@ journalctl -u apartment-admin -f | grep wecom-bot
 
 ```bash
 node --check server/src/lib/wecomBot.js          # 或遍历 server/src 全量
-node server/test/audit.unit.test.mjs             # 40 项离线单测
-node server/test/wecom.unit.test.mjs             # 69 项离线单测（配置/URL 白名单/日期/汇总/事件/幂等）
-node server/test/date.unit.test.mjs              # 到期日锚点与月末夹取
-node server/test/roomQuery.unit.test.mjs         # 108 项离线单测（命令/白名单/快照/脱敏/去重/限流）
+node server/test/audit.unit.test.mjs             # 40 项（审计采集/脱敏/CSV 防注入）
+node server/test/wecom.unit.test.mjs             # 69 项（配置/URL 白名单/日期/汇总/事件/幂等）
+node server/test/date.unit.test.mjs              # 21 项（到期日锚点与月末夹取）
+node server/test/roomQuery.unit.test.mjs         # 108 项（命令/白名单/快照/脱敏/去重/限流）
+node server/test/rbac.unit.test.mjs              # 17 项（查库校验/禁用与降级即时失效/角色白名单）
+node server/test/sqlshape.unit.test.mjs          # 5 项（SQL 列数/占位符/参数一致性，防参数错位）
 npm run build                                   # 离线构建
 # 容器内：node scripts/wecom-bot-check.mjs      # 真实数据库渲染群内答案
 ```

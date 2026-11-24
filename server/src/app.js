@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { authRequired } from './auth.js'
+import { authRequired, requireRole } from './auth.js'
 import authRoutes from './routes/auth.js'
 import userRoutes from './routes/users.js'
 import storeRoutes from './routes/stores.js'
@@ -43,8 +43,8 @@ export function createApp() {
 
   // 鉴权路由（登录/刷新无需 token）
   app.use('/api/auth', authRoutes)
-  // 以下接口均需登录
-  app.use('/api/users', authRequired, userRoutes)
+  // 以下接口均需登录。用户/角色管理属高危：仅超级管理员可增删账号、改角色与密码。
+  app.use('/api/users', authRequired, requireRole('admin'), userRoutes)
   app.use('/api/stores', authRequired, storeRoutes)
   app.use('/api/rooms', authRequired, roomRoutes)
   app.use('/api/tenants', authRequired, tenantRoutes)

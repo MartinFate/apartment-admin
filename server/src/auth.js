@@ -2,6 +2,7 @@
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import crypto from 'node:crypto'
+import db from './db.js'
 
 const DEFAULT_SECRET = 'apartment-dev-secret-change-me'
 const configured = (process.env.JWT_SECRET || '').trim()
@@ -33,20 +34,51 @@ export function signToken(user) {
   )
 }
 
-// 路由鉴权中间件：要求 Authorization: Bearer <token>
+// JWT 仅证明「曾通过登录」，不证明账号现在仍可用。7 天有效期里管理员可能已禁用账号、
+// 改其角色或删号，因此每个请求都实时回查 users 表：
+//   - 账号被删/禁用 → 立即失效，旧 token 不能再访问任何接口；
+//   - 角色以库里的最新值为准覆盖 token 快照，降权即时生效，不必等 token 过期。
+// 管理员禁用某人后无需等 7 天，这是多人使用前必须补的一环。
 export function authRequired(req, res, next) {
   const h = req.headers.authorization || ''
   const token = h.startsWith('Bearer ') ? h.slice(7) : ''
   if (!token) return res.status(401).json({ message: '未登录或登录已过期' })
+
+  let claims
   try {
-    req.user = jwt.verify(token, SECRET)
-    next()
+    claims = jwt.verify(token, SECRET)
   } catch {
-    res.status(401).json({ message: '登录已过期，请重新登录' })
+    return res.status(401).json({ message: '登录已过期，请重新登录' })
   }
+
+  // 先临时放上 token 里的身份，便于失败响应也能被审计记录到「谁在尝试访问」。
+  req.user = { ...claims }
+  const u = db
+    .prepare('SELECT id, username, name, role, store_id, status FROM users WHERE id=?')
+    .get(claims.sub)
+  if (!u) {
+    delete req.user
+    return res.status(401).json({ message: '账号不存在，请重新登录' })
+  }
+  if (u.status !== 'active') {
+    req.user.role = u.role // 审计里仍按库中真实角色记录
+    return res.status(403).json({ message: '账号已被禁用，请联系管理员' })
+  }
+
+  // 以数据库为准刷新身份快照；requireRole 依赖这里的 role 而非 token 里的旧值。
+  req.user = {
+    sub: u.id,
+    id: u.id,
+    username: u.username,
+    name: u.name,
+    role: u.role,
+    storeId: u.store_id,
+    status: u.status
+  }
+  next()
 }
 
-// 角色校验中间件工厂（阶段二启用 RBAC 时使用）
+// 角色校验中间件工厂：必须挂在 authRequired 之后，依赖其写入的 req.user.role（实时值）。
 export function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
